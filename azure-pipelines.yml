@@ -10,37 +10,8 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-- task: AzureCLI@2
-  name: GetOIDCToken
+- task: JfrogCliV2@1
   inputs:
-    azureSubscription: "MyServiceConnection"
-    scriptType: bash
-    scriptLocation: inlineScript
-    inlineScript: |
-      echo "Requesting OIDC token from Azure DevOps..."
-      TOKEN=$(az account get-access-token --resource "api://AzureADTokenExchange" --query accessToken -o tsv)
-      echo "##vso[task.setvariable variable=OIDC_TOKEN]$TOKEN"
-
-# 2️⃣ Exchange Azure OIDC token for a JFrog access token
-- script: |
-    echo "Exchanging Azure OIDC token for JFrog access token..."
-
-    JFROG_TOKEN=$(curl -s -X POST \
-      "https://yuvi.jfrog.io/access/api/v1/oidc/token" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
-        "subject_token": "'"$OIDC_TOKEN"'"
-      }' | jq -r '.access_token')
-
-    echo "JFrog Token Received"
-    echo "##vso[task.setvariable variable=JFROG_TOKEN]$JFROG_TOKEN"
-  displayName: "Exchange OIDC Token for JFrog Token"
-
-# 3️⃣ Ping Artifactory
-- script: |
-    echo "Pinging Artifactory..."
-    curl -i -H "Authorization: Bearer $JFROG_TOKEN" \
-        "https://yuvi.jfrog.io/artifactory/api/system/ping"
-  displayName: "Ping Artifactory"
+    jfrogPlatformConnection: 'azure-oidc'
+    command: |
+       jf rt ping --url=https://yuvi.jfrog.io/artifactory
