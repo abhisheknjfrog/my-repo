@@ -1,18 +1,60 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
 - main
 
 pool:
   name: 'Ubuntu-VM'
 
+parameters:
+  - name: os
+    default: linux
+  - name: arch
+    default: amd64
+  - name: src_path
+    default: .
+  - name: dst_path
+    default: ./bin
+  - name: cgo
+    default: false
 
 steps:
-- task: JfrogCliV2@1
+- task: GoTool@0
   inputs:
-    jfrogPlatformConnection: 'azure-oidc'
-    command: |
-       jf rt ping --url=https://yuvi.jfrog.io/artifactory
+    version: '1.25.3'
+
+- task: Bash@3
+  displayName: "Configure Auth for HTTP Artifactory and Bitbucket"
+  inputs:
+    targetType: 'inline'
+    script: |
+      # 1. Fix 'insecure credentials' by providing auth via .netrc
+      # This allows Go to send credentials to an HTTP (non-TLS) IP address.
+      echo "machine 20.127.158.25 login admin password Jfrog@2025" > ~/.netrc
+      chmod 600 ~/.netrc
+      
+      # 2. Fix 'terminal prompts disabled' for private Bitbucket modules
+      # This forces Git to use the token instead of asking for a password.
+      git config --global url."https://x-token-auth:$(BITBUCKET_TOKEN)@bitbucket.org/".insteadOf "https://bitbucket.org/"
+      
+      echo "Auth configuration complete."
+
+- task: CmdLine@2
+  inputs:
+    script: 'go env'
+
+- task: JFrogGo@1
+  displayName: "Go Mod Tidy (Artifactory Proxy)"
+  inputs:
+    command: 'custom'
+    customCommand: 'mod'
+    artifactoryConnection: 'abhishekn-71254-go'
+    resolutionRepo: 'sumedha-go'
+    goArguments: tidy -v -x
+  env:
+    GONOPROXY:
+    GONOSUMDB: "bitbucket.org/*"
+    GOPROXY: "http://20.127.158.25:8082/artifactory/api/go/sumedha-go/"
+    GOINSECURE: "20.127.158.25:8082"
+    GOPRIVATE: "bitbucket.org/*"
+    GOOS: ${{ parameters.os }}
+    GOARCH: ${{ parameters.arch }}
+    CGO_ENABLED: 0
